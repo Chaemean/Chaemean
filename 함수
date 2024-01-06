@@ -1,0 +1,699 @@
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/videoio.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/opencv.hpp>
+
+#include <iostream>
+#include <stdio.h>
+
+using namespace cv;
+using namespace std;
+
+//칼라 이미지를 자르는 함수 (이미지, 시작x위치, 끝 x위치, 시작y위치, 끝y위치)
+Mat ShapesColor(Mat image, int x_start, int x_end, int y_start, int y_end) //사진을 자르는 함수
+{
+    int w = image.cols;  //원본 사진의 가로 크기
+    int h = image.rows;  //원본 사진의 세로 크기
+
+    Mat subImage(y_end - y_start, x_end - x_start, image.type());  //Mat 객체 만듦, (세로크기, 가로크기, image타입과 같은 데이터형
+
+    for (int j = y_start; j < y_end; j++) {  //subimage에 원본 사진의 필요한 부분 픽셀 저장
+        for (int i = x_start; i < x_end; i++) {
+            subImage.at<Vec3b>(j - y_start, i - x_start) = image.at<Vec3b>(j, i); //.at으로 픽셀값에 접근, <Vec3b>는 픽셀의 데이터 타입을 BGR을 가진 벡터로 지정
+        }
+    }
+
+    return subImage;
+}
+
+//명암 이미지를 자르는 함수
+Mat ShapesGray(Mat image, int x_start, int x_end, int y_start, int y_end) //사진을 자르는 함수
+{
+    int w = image.cols;  //원본 사진의 가로 크기
+    int h = image.rows;  //원본 사진의 세로 크기
+
+    Mat subImage(y_end - y_start, x_end - x_start, image.type());  //Mat 객체 만듦, (세로크기, 가로크기, image타입과 같은 데이터형
+
+    for (int j = y_start; j < y_end; j++) {  //subimage에 원본 사진의 필요한 부분 픽셀 저장
+        for (int i = x_start; i < x_end; i++) {
+            subImage.at<uchar>(j - y_start, i - x_start) = image.at<uchar>(j, i);
+        }
+    }
+
+    return subImage;
+}
+
+//배열 max값 반환 함수
+int MaxiArray(int hist[]) {
+    int max = 0;
+    for (int i = 0; i < 256; i++) {
+        if (max < hist[i])
+            max = hist[i];
+    }
+    return max;
+}
+
+//이미지에대한 히스토그램 이미지 반환, opencv헤더, 최대 배열 인수 찾는 maxi_array필요
+Mat HistImg(Mat img)
+{
+    // 히스토그램 계산
+    int histSize = 256; // 히스토그램의 크기
+    int hist[256] = { 0 }; // 히스토그램 배열 초기화
+
+    // 이미지를 순회하면서 레드 채널 강도에 대한 히스토그램 누적
+    for (int i = 0; i < img.rows; i++) {
+        for (int j = 0; j < img.cols; j++) {
+            int intensity = (int)img.at<uchar>(i, j); //(i, j)위치 픽셀의 값 읽어옴
+            hist[intensity]++;  //읽어온 픽셀의 값에 해당하는 위치에 1 추가 (해당 픽셀 값을 가진 수가 얼마인지 계산)
+        }
+    }
+
+    // 히스토그램 시각화
+    Mat histImage(400, 512, CV_8UC3, Scalar(255, 255, 255)); //흰색의 가로:512, 세로:400 사이즈 배열을 만듦
+
+    int binWidth = histImage.cols / histSize; //막대그래프의 너비 계산
+    int maxCount = MaxiArray(hist); //최다 빈도 maxCount에 저장
+
+    for (int i = 0; i < histSize; i++) {
+        int binHeight = round((double)hist[i] / maxCount * histImage.rows);
+        //maxCount로 나눠서 빈도를 정규화하고, histImage.rows를 곱해서 이미지의 높이에 맞게 스테일링 한다.
+        //정규화를 해주는 이유는 크기를 상대적인 비율로 나타낼수 있게 되고 그로 인해 차이가 큰 경우에도 비교를 할 수 있다.
+        rectangle(histImage, Point(i * binWidth, histImage.rows), //histImage로 막대그래프 그린다, opencv헤더파일 필요
+            Point((i + 1) * binWidth, histImage.rows - binHeight), //Point는 그릴 영역의 왼쪽 위 꼭짓점 좌표, 오른쪽 아래 쪽짓점 좌표이다.
+            Scalar(0, 0, 255), -1); //그래프 빨간색으로 그림
+    }
+
+    return histImage;
+}
+
+//otsh_threshold 값 반환 (이미지), 명암 영상을 받아서 오츄 임계값 반환
+int OtshThreshold(Mat img)
+{
+    int otsh_threshold = 0;
+    double min_variance = 1e+10;
+
+    int w = img.cols;
+    int h = img.rows;
+
+    for (int threshold = 0; threshold < 256; threshold++) {
+        int n0 = 0, n1 = 0;
+        double u0 = 0, u1 = 0;
+        double v0 = 0, v1 = 0;
+
+        // 히스토그램 계산
+        int histSize = 256; // 히스토그램의 크기
+        int hist[256] = { 0 }; // 히스토그램 배열 초기화
+
+        // 이미지를 순회하면서 레드 채널 강도에 대한 히스토그램 누적
+        for (int i = 0; i < img.rows; i++) {
+            for (int j = 0; j < img.cols; j++) {
+                int intensity = (int)img.at<uchar>(i, j); //(i, j)위치 픽셀의 값 읽어옴
+                hist[intensity]++;  //읽어온 픽셀의 값에 해당하는 위치에 1 추가 (해당 픽셀 값을 가진 수가 얼마인지 계산)
+            }
+        }
+
+        for (int i = 0; i <= threshold; i++)
+            n0 += hist[i];
+
+        // n1 계산 (t + 1 ~ L - 1까지의 누적합)
+        n1 = (w * h - n0);
+
+        if (n0 == 0 || n1 == 0) {
+            continue;
+        }
+
+        // μ0과 μ1 구하기 (n0과 n1의 평균)
+        for (int m = 0; m <= threshold; m++)
+            u0 += (double)(m * hist[m]) / (double)n0;
+
+        for (int m = threshold + 1; m < 256; m++)
+            u1 += (double)(m * hist[m]) / (double)n1;
+
+        // v0과 v1 구하기 (분산)
+        for (int m = 0; m <= threshold; m++)
+            v0 += double(hist[m] * (m - u0) * (m - u0)) / double(n0);
+
+        for (int m = threshold + 1; m < 256; m++)
+            v1 += double(hist[m] * (m - u1) * (m - u1)) / double(n1);
+
+        double temp = n0 * v0 + n1 * v1;
+
+        // 가장 작은 temp일때의 treshold값을 임계값 T로 취한다.
+        if (temp < min_variance) {
+            min_variance = temp;
+            otsh_threshold = threshold;
+        }
+    }
+
+    return otsh_threshold;
+}
+
+//임계값을 넣으면 이진화된 영상 반환하는 함수 (이미지, 임계값)
+Mat BinaryImg(Mat img, int threshold)
+{
+    int h = img.rows;
+    int w = img.cols;
+
+    for (int i = 0; i < h; i++) {
+        for (int j = 0; j < w; j++) {
+            if ((img.at<uchar>(i, j)) > threshold) //임계값보다 크면 255, 작으면 0으로 이진화
+                img.at<uchar>(i, j) = 255;
+            else
+                img.at<uchar>(i, j) = 0;
+        }
+    }
+
+    return img;
+}
+
+//채널 분리 함수 (이미지, 저장할 채널번호) 0=blue, 1=green, 2=red, 3=A(png만 해당)
+Mat SplitColor(Mat img, int x)
+{
+    int w = img.cols;
+    int h = img.rows;
+
+    Mat splitChannel(h, w, CV_8UC1);
+
+    if (x == 0)
+    {
+        for (int i = 0; i < h; i++) {
+            for (int j = 0; j < w; j++) {
+                Vec3b pixel = img.at<Vec3b>(i, j); // 원본 사진의 픽셀을 Vec3b형의 pixel에 저장한다.
+
+                splitChannel.at<uchar>(i, j) = pixel[0]; // blue 채널, pixel의 1번째 채널을 저장
+            }
+        }
+        return splitChannel;
+    }
+
+    else if (x == 1)
+    {
+        for (int i = 0; i < h; i++) {
+            for (int j = 0; j < w; j++) {
+                Vec3b pixel = img.at<Vec3b>(i, j); // 원본 사진의 픽셀을 Vec3b형의 pixel에 저장한다.
+
+                splitChannel.at<uchar>(i, j) = pixel[1]; // green 채널, pixel의 2번째 채널을 저장
+            }
+        }
+        return splitChannel;
+    }
+
+    else if (x == 2)
+    {
+        for (int i = 0; i < h; i++) {
+            for (int j = 0; j < w; j++) {
+                Vec3b pixel = img.at<Vec3b>(i, j); // 원본 사진의 픽셀을 Vec3b형의 pixel에 저장한다.
+
+                splitChannel.at<uchar>(i, j) = pixel[2]; // green 채널, pixel의 3번째 채널을 저장
+            }
+        }
+        return splitChannel;
+    }
+
+    else if (x == 3)
+    {
+        for (int i = 0; i < h; i++) {
+            for (int j = 0; j < w; j++) {
+                Vec3b pixel = img.at<Vec3b>(i, j); // 원본 사진의 픽셀을 Vec3b형의 pixel에 저장한다.
+
+                splitChannel.at<uchar>(i, j) = pixel[3];
+            }
+        }
+        return splitChannel;
+    }
+}
+
+//절댓값 반환
+double Absol(double x)
+{
+    if (x >= 0)
+        return x;
+    else
+        return -x;
+}
+
+//두 값 중 작은값 반환 
+int Mini(int x, int y) {
+    if (x > y)
+        return y;
+    else
+        return x;
+}
+
+//두 값중 큰값 반환
+int Maxi(int x, int y) {
+    if (x < y)
+        return y;
+    else
+        return x;
+}
+
+//최근접 이웃 보간법 (이미지, x배수, y배수)
+Mat ResizeNearest(Mat image, double fx, double fy)
+{
+    int w = image.cols;
+    int h = image.rows;
+
+    int n_Height = (int)h * fy;
+    int n_Width = (int)w * fx;
+
+    Mat subImage(n_Height, n_Width, image.type());
+
+    for (int j = 0; j < n_Height; ++j) {
+        for (int i = 0; i < n_Width; ++i) {
+            int originalI = (int)(i / fx + 0.5); //단순히 반올림을 해서 가까운 화소값 가져옴
+            int originalJ = (int)(j / fy + 0.5);
+
+            //범위를 벗어나는 경우 보정, 새로운 이미지가 원본 이미지의 범위를 넘어가면 가까운 이미지 좌표로 보정
+            originalI = Maxi(0, Mini(originalI, w - 1)); //I가 0보다 작으면 0으로 w-1보다 크면 w-1로 보정한다.
+            originalJ = Maxi(0, Mini(originalJ, h - 1)); //J가 0보다 작으면 0으로 h-1보다 크면 h-1로 보정한다.
+
+            // 최근접 이웃 값을 할당
+            subImage.at<cv::Vec3b>(j, i) = image.at<cv::Vec3b>(originalJ, originalI);
+        }
+    }
+
+    return subImage;
+}
+
+//양선형 보간 (이미지, x배수, y배수)
+Mat ResizeBilinear(Mat image, double fx, double fy) {
+    int w = image.cols;
+    int h = image.rows;
+
+    int n_Height = (int)(h * fy);
+    int n_Width = (int)(w * fx);
+
+    Mat subImage(n_Height, n_Width, image.type());
+
+    for (int j = 0; j < n_Height; ++j) {
+        for (int i = 0; i < n_Width; ++i) {
+            // 원본 이미지에서의 실수 좌표
+            double originalI = i / fx; //i를 다시 fx만큼 줄여 원본 이미지의 좌표 저장
+            double originalJ = j / fy;
+
+            // 가장 가까운 상하좌우 픽셀의 좌표
+            int i1 = (int)(originalI); //원본 이미지의 i/fx 좌표(i1)와 제일 가까운 좌표값
+            int j1 = (int)(originalJ);
+            int i2 = Mini(i1 + 1, w - 1); //원본이미지에서 i1,j1과 오른쪽 아래에 있는 위치를 이용해 화소값 계산
+            int j2 = Mini(j1 + 1, h - 1); //범위 넘어갈때를 대비해 w-1,h-1을 이용해 최솟값을 찾아준다
+
+            // 가중치 계산
+            double dx = originalI - i1; //원래 가중치는 (x-x1)/(x2-x1)으로 계산하지만 x2-x1이 1이기때문에 분자만 남음
+            double dy = originalJ - j1; //위 식에서 x= 채울 위치, x1=가까운 픽셀좌표1, x2=가까운 픽셀좌표2
+
+            // 양선형 보간법을 적용한 픽셀 값 계산
+            subImage.at<Vec3b>(j, i) =
+                (1 - dx) * (1 - dy) * image.at<Vec3b>(j1, i1) + //(1-p)(1-q)a+p(1-q)b+(1-p)qc+pqd식을 이용해 픽셀값 계산
+                dx * (1 - dy) * image.at<Vec3b>(j1, i2) +      //위 식에서 p=x방향 가중치, q=y방향 가중치
+                (1 - dx) * dy * image.at<Vec3b>(j2, i1) +
+                dx * dy * image.at<Vec3b>(j2, i2);
+        }
+    }
+
+    return subImage;
+}
+
+//칼라->명암영상 함수 (이미지)
+Mat Gray(Mat img)
+{
+    int w = img.cols;
+    int h = img.rows;
+
+    Mat sub(h, w, CV_8UC1);
+
+    //명암영상 변환공식을 사용하여 그레이로 변환, +0.5는 반올림을 위해 해줌
+    for (int i = 0; i < h; i++) {
+        for (int j = 0; j < w; j++) {
+            Vec3b pixel = img.at<Vec3b>(i, j);
+            sub.at<uchar>(i, j) = (int)(0.114 * pixel[0] + 0.587 * pixel[1] + 0.299 * pixel[2] + 0.5);
+        }
+    }
+
+    return sub;
+}
+
+// 이진 마스크를 사용한 침식 연산 함수 (이진영상, 0과1로 이루어진 마스크)
+Mat erodeWithMask(Mat img, Mat mask) {
+    // 이미지의 높이와 너비
+    int h = img.rows;
+    int w = img.cols;
+
+    //반환할 이미지 생성
+    Mat erode_img(h, w, CV_8UC1);
+
+    // 마스크의 중심 위치
+    int maskCenterX = mask.cols / 2;
+    int maskCenterY = mask.rows / 2;
+
+    Mat sub = Mat::zeros(h + 2 * maskCenterY, w + 2 * maskCenterX, CV_8UC1);
+    for (int i = maskCenterY; i < h + maskCenterY; i++) { //sub에 원래 이미지 화솟값 채워줌, 가장자리 부분에 채우지 않도록 주의
+        for (int j = maskCenterX; j < w + maskCenterX; j++) {
+            sub.at<uchar>(i, j) = img.at<uchar>(i - maskCenterY, j - maskCenterX);
+        }
+    }
+
+    // 침식 연산 수행
+    for (int i = maskCenterY; i < h + maskCenterY; i++) {
+        for (int j = maskCenterX; j < w + maskCenterX; j++) {
+            // 마스크를 사용하여 주변 픽셀 검사 및 연산 수행 (AND 연산)
+            int sum = 0;
+
+            //마스크 내 연산
+            for (int m = 0; m < mask.rows; m++) {
+                for (int n = 0; n < mask.cols; n++) {
+                    if (mask.at<uchar>(m, n) == 1) { //마스크 값이 1이면
+                        if (sub.at<uchar>(i + m - maskCenterY, j + n - maskCenterX) < 1) //픽셀값이 0인지 판단하고 0이면 sum을 증가시킨다.
+                            sum++;
+                    }
+                }
+            }
+
+            if (sum > 0) //sum이 한번이라도 증가했을시 값으로 0을 넣어준다.
+                erode_img.at<uchar>(i - maskCenterY, j - maskCenterX) = saturate_cast<uchar>(0);
+            else
+                erode_img.at<uchar>(i - maskCenterY, j - maskCenterX) = saturate_cast<uchar>(255);
+        }
+    }
+
+    return erode_img;
+}
+
+// 이진 마스크를 사용한 팽창 연산 함수 (이진영상, 0과1로 이루어진 마스크)
+Mat dilateWithMask(Mat img, Mat mask) {
+    // 이미지의 높이와 너비
+    int h = img.rows;
+    int w = img.cols;
+
+    // 반환할 이미지 생성
+    Mat dilate(h, w, CV_8UC1);
+
+    // 마스크의 중심 위치
+    int maskCenterX = mask.cols / 2;
+    int maskCenterY = mask.rows / 2;
+
+    Mat sub = Mat::zeros(h + 2 * maskCenterY, w + 2 * maskCenterX, CV_8UC1);
+    for (int i = maskCenterY; i < h + maskCenterY; i++) { //sub에 원래 이미지 화솟값 채워줌, 가장자리 부분에 채우지 않도록 주의
+        for (int j = maskCenterX; j < w + maskCenterX; j++) {
+            sub.at<uchar>(i, j) = img.at<uchar>(i - maskCenterY, j - maskCenterX);
+        }
+    }
+
+    // 팽창 연산 수행
+    for (int i = maskCenterY; i < h + maskCenterY; i++) {
+        for (int j = maskCenterX; j < w + maskCenterX; j++) {
+            // 마스크를 사용하여 주변 픽셀 검사 및 연산 수행 (AND 연산)
+            int sum = 0;
+
+            //마스크 내 연산
+            for (int m = 0; m < mask.rows; m++) {
+                for (int n = 0; n < mask.cols; n++) {
+                    if (mask.at<uchar>(m, n) == 1) { //마스크 값이 1이면
+                        if (sub.at<uchar>(i + m - maskCenterY, j + n - maskCenterX) > 254) //픽셀값이 255인지 판단하고 255이면 sum을 증가시킨다.
+                            sum++;
+                    }
+                }
+            }
+
+            if (sum > 0) //sum이 한번이라도 증가시 값으로 255을 넣어준다.
+                dilate.at<uchar>(i - maskCenterY, j - maskCenterX) = saturate_cast<uchar>(255);
+            else
+                dilate.at<uchar>(i - maskCenterY, j - maskCenterX) = saturate_cast<uchar>(0);
+        }
+    }
+
+    return dilate;
+}
+
+//컨볼루션 해주는 함수 (이미지, 커널)
+Mat Convolution(Mat img, Mat kernel) {
+    int kernelRows = kernel.rows;
+    int kernelCols = kernel.cols;
+
+    int imageRows = img.rows;
+    int imageCols = img.cols;
+
+    int paddingX = kernelCols / 2; // 가장자리 적용 안되는 부분 계산
+    int paddingY = kernelRows / 2;
+
+    //가장자리를 적용하기위해 가장자리를 0으로 채우는 0덧대기를 해준다
+    Mat sub = Mat::zeros(imageRows + 2 * paddingY, imageCols + 2 * paddingX, CV_8UC1); //0으로 초기화
+    Mat convol_img(imageRows, imageCols, CV_8UC1); //반환할 이미지
+
+    for (int i = paddingY; i < imageRows + paddingY; i++) { //sub에 원래 이미지 화솟값 채워줌, 가장자리 부분에 채우지 않도록 주의
+        for (int j = paddingX; j < imageCols + paddingX; j++) {
+            sub.at<uchar>(i, j) = img.at<uchar>(i - paddingY, j - paddingX);
+        }
+    }
+
+    // 가장자리(필터 적용이 안되는 부분)를 제외한 부분 컨볼루션
+    for (int i = paddingY; i < imageRows + paddingY; i++) {
+        for (int j = paddingX; j < imageCols + paddingX; j++) {
+            double sum = 0.0; // 중심화소 값 = sum
+
+            // 커널과 픽셀값 연산해서 중심화소 값 계산
+            for (int ky = 0; ky < kernelRows; ky++) {
+                for (int kx = 0; kx < kernelCols; kx++) {
+                    double pixelValue = (double)sub.at<uchar>(i + ky - paddingY, j + kx - paddingX); //확장된 sub를 이용하여 중심화소를 기준으로 주변 값을 읽어온다.
+                    double kernelValue = kernel.at<double>(ky, kx); // 커널 값을 읽어온다
+                    sum += pixelValue * kernelValue; // 주변화소값과 커널값을 곱한 값을 모두 더해준다.
+                }
+            }
+
+            convol_img.at<uchar>(i - paddingY, j - paddingX) = saturate_cast<uchar>(sum); // 반환할 이미지에 계산된 값을 넣어준다
+        }
+    }
+
+    return convol_img;
+}
+
+//명암영상 가우시안 커널 구하기
+Mat GaussianFilter(Mat img, int x) //이미지, 필터의 크기
+{
+    double sigma = (double)x / 6;
+    double pi = 3.141592;
+    double e = 2.718;
+    double p = 1 / (sigma * sigma * 2 * pi);
+
+    Mat gaussian_filter(x, x, CV_64F);//소숫점을 저장하기 위해 데이터형을 CV_64F로 해준다
+
+    for (int i = 0; i < x; i++)
+    {
+        for (int j = 0; j < x; j++) {
+            double power = (double)((i - x / 2) * (i - x / 2) + (j - x / 2) * (j - x / 2)) / (2 * sigma * sigma); //e의 지수 계산
+            gaussian_filter.at<double>(i, j) = p * pow(e, -power);  //필터 값 넣어줌
+        }
+    }
+
+    return gaussian_filter;
+}
+
+//gx, gy 영상합치기
+Mat Combine_edge(Mat sobelX, Mat sobelY) {
+    int rows = sobelX.rows;
+    int cols = sobelX.cols;
+
+    Mat combinedSobel = Mat::zeros(rows, cols, CV_8UC1);
+
+    for (int i = 0; i < rows; i++) {
+        for (int j = 0; j < cols; j++) {
+            // x방향과 y방향 에지 강도를 제곱하여 더함
+            double gx = sobelX.at<uchar>(i, j);
+            double gy = sobelY.at<uchar>(i, j);
+            double magnitude = sqrt(gx * gx + gy * gy);
+            float ang = std::atan2(gy, gx); //그레이디언트 각 계산
+
+            if ((0 <= j && j < 5) && (0 <= i && i < 5)) {
+                cout << ang << " ";
+            }
+
+            // 최종 에지 강도를 이미지에 저장
+            combinedSobel.at<uchar>(i, j) = saturate_cast<uchar>(magnitude);
+        }
+        cout << endl;
+    }
+
+    return combinedSobel;
+}
+
+//라플라시안 해주는 함수 (이미지, 커널)
+Mat Laplacian(Mat img) {
+
+    Mat lap = (Mat_<double>(3, 3) << 1, 1, 1, 1, -8, 1, 1, 1, 1);
+
+    int kernelRows = lap.rows;
+    int kernelCols = lap.cols;
+
+    int imageRows = img.rows;
+    int imageCols = img.cols;
+
+    int paddingX = kernelCols / 2; // 가장자리 적용 안되는 부분 계산
+    int paddingY = kernelRows / 2;
+
+    //가장자리를 적용하기위해 가장자리를 0으로 채우는 0덧대기를 해준다
+    Mat sub = Mat::zeros(imageRows + 2 * paddingY, imageCols + 2 * paddingX, CV_8UC1); //0으로 초기화
+    Mat convol_img(imageRows, imageCols, CV_8UC1); //반환할 이미지
+
+    for (int i = paddingY; i < imageRows + paddingY; i++) { //sub에 원래 이미지 화솟값 채워줌, 가장자리 부분에 채우지 않도록 주의
+        for (int j = paddingX; j < imageCols + paddingX; j++) {
+            sub.at<uchar>(i, j) = img.at<uchar>(i - paddingY, j - paddingX);
+        }
+    }
+
+    // 가장자리(필터 적용이 안되는 부분)를 제외한 부분 컨볼루션
+    for (int i = paddingY; i < imageRows + paddingY; i++) {
+        for (int j = paddingX; j < imageCols + paddingX; j++) {
+            double sum = 0.0; // 중심화소 값 = sum
+
+            // 커널과 픽셀값 연산해서 중심화소 값 계산
+            for (int ky = 0; ky < kernelRows; ky++) {
+                for (int kx = 0; kx < kernelCols; kx++) {
+                    double pixelValue = (double)sub.at<uchar>(i + ky - paddingY, j + kx - paddingX); //확장된 sub를 이용하여 중심화소를 기준으로 주변 값을 읽어온다.
+                    double kernelValue = lap.at<double>(ky, kx); // 커널 값을 읽어온다
+                    sum += pixelValue * kernelValue; // 주변화소값과 커널값을 곱한 값을 모두 더해준다.
+                }
+            }
+
+            if (sum < 0) { sum = 0; }
+            else if (sum > 255) { sum = 255; }
+
+            convol_img.at<uchar>(i - paddingY, j - paddingX) = sum; // 반환할 이미지에 계산된 값을 넣어준다
+        }
+    }
+
+    return convol_img;
+}
+
+//크기, 각도 계산 함수
+void cartToPolar(const Mat& grad_x, const Mat& grad_y, Mat& magnitude, Mat& angle, bool angleInDegrees = true) {
+    magnitude = Mat(grad_x.size(), CV_32F); //사진과 동일한 크기의 이미지 생성
+    angle = Mat(grad_x.size(), CV_32F);
+
+    for (int y = 0; y < grad_x.rows; y++) {
+        for (int x = 0; x < grad_x.cols; x++) {
+            float gx = grad_x.at<float>(y, x);
+            float gy = grad_y.at<float>(y, x);
+
+            magnitude.at<float>(y, x) = std::sqrt(gx * gx + gy * gy); //에지 강도 계산, magnitude에 대입
+            float ang = std::atan2(gy, gx); //그레이디언트 각 계산
+            if (angleInDegrees) {  //단위 라디안->도(degree)
+                ang = ang * (180 / CV_PI);
+            }
+            angle.at<float>(y, x) = ang; //angle에 대입
+        }
+    }
+}
+
+//NMS
+Mat nonMaxSuppression(const Mat& grad_x, const Mat& grad_y) {
+    Mat grad_x_float, grad_y_float;
+    grad_x.convertTo(grad_x_float, CV_32F); //음수를 포함하거나 실수일 수 있으므로 32F로 설정
+    grad_y.convertTo(grad_y_float, CV_32F);
+
+    Mat magnitude, angle;
+    cartToPolar(grad_x_float, grad_y_float, magnitude, angle, true); //함수를 이용해 크기와 각 계산
+
+    Mat suppressed = Mat::zeros(magnitude.size(), CV_8UC1); // 결과 이미지 초기화
+
+    for (int y = 1; y < magnitude.rows - 1; ++y) {
+        for (int x = 1; x < magnitude.cols - 1; ++x) {
+            float angleDeg = angle.at<float>(y, x);
+            angleDeg = angleDeg < 0 ? angleDeg + 360 : angleDeg; //각도가 음수일 경우 보정
+
+            float q = 255, r = 255;
+
+            if ((angleDeg >= 0 && angleDeg < 22.5) || (angleDeg >= 157.5 && angleDeg < 202.5) || (angleDeg >= 337.5 && angleDeg <= 360)) { //좌우
+                q = magnitude.at<float>(y, x + 1);
+                r = magnitude.at<float>(y, x - 1);
+            }
+            else if ((angleDeg >= 22.5 && angleDeg < 67.5) || (angleDeg >= 202.5 && angleDeg < 247.5)) { //45도 각도
+                q = magnitude.at<float>(y + 1, x - 1);
+                r = magnitude.at<float>(y - 1, x + 1);
+            }
+            else if ((angleDeg >= 67.5 && angleDeg < 112.5) || (angleDeg >= 247.5 && angleDeg < 292.5)) { //상하
+                q = magnitude.at<float>(y + 1, x);
+                r = magnitude.at<float>(y - 1, x);
+            }
+            else if ((angleDeg >= 112.5 && angleDeg < 157.5) || (angleDeg >= 292.5 && angleDeg < 337.5)) { //-45도 각도
+                q = magnitude.at<float>(y - 1, x - 1);
+                r = magnitude.at<float>(y + 1, x + 1);
+            }
+
+            if (magnitude.at<float>(y, x) >= q && magnitude.at<float>(y, x) >= r) { //에지 방향에 수직인 두 화소와 비교
+                suppressed.at<uchar>(y, x) = saturate_cast<uchar>(magnitude.at<float>(y, x)); //주변보다 클 경우 남김
+            }
+            else {
+                suppressed.at<uchar>(y, x) = 0; //그렇지 않은 경우 억제
+            }
+
+            if ((1 <= x && x < 8) && (1 <= y && y < 8)) {
+                cout << magnitude.at<float>(y, x) << " |";
+            }
+        }
+        cout << endl;
+    }
+
+    return suppressed;
+}
+
+//이중 임계(Hyestersis)
+Mat applyDoubleThreshold(Mat& non_max_suppressed, double lowThreshold, double highThreshold) {
+    Mat strongEdges = Mat::zeros(non_max_suppressed.size(), CV_8U);
+    Mat weakEdges = Mat::zeros(non_max_suppressed.size(), CV_8U);
+    Mat test = Mat::zeros(non_max_suppressed.size(), CV_8U);
+
+    // 강한 엣지와 약한 엣지 구별
+    for (int y = 0; y < non_max_suppressed.rows; ++y) {
+        for (int x = 0; x < non_max_suppressed.cols; ++x) {
+            float value = non_max_suppressed.at<uchar>(y, x);
+
+            if (value >= highThreshold) {
+                strongEdges.at<uchar>(y, x) = 255;
+                test.at<uchar>(y, x) = 255;  //high임계값보다 큰 경우 남김
+                imshow("strong", strongEdges);
+            }
+            else if (value >= lowThreshold) {  // low =< value =< high 인경우 밑에서 다시 판단
+                weakEdges.at<uchar>(y, x) = 255;
+                imshow("weak", weakEdges);
+            }
+        }
+    }
+
+
+    // 약한 엣지 중 강한 엣지와 연결된 픽셀 찾기
+    for (int y = 0; y < weakEdges.rows; ++y) {
+        for (int x = 0; x < weakEdges.cols; ++x) {
+            int sum = 0;
+            if (weakEdges.at<uchar>(y, x)) {
+                for (int dy = -2; dy <= 2; ++dy) { //주변 화소들 중에 강한에지가 있는지 판단, 성능을 위해 주변8개가 아닌 24개를 확인
+                    for (int dx = -2; dx <= 2; ++dx) {
+                        int ny = y + dy;
+                        int nx = x + dx;
+                        if (ny >= 0 && ny < weakEdges.rows && nx >= 0 && nx < weakEdges.cols) {
+                            if (strongEdges.at<uchar>(ny, nx) != 0) { //주변에 강한에지가 있는경우 sum++
+                                ++sum;
+                            }
+                            else if (test.at<uchar>(ny, nx) != 0) //주변에 강한에지와 연결된 에지가 있는 경우
+                                ++sum;
+                        }
+                    }
+                }
+            }
+            if (sum != 0) { //주변에 강한에지가 하나라도 있다면 255 대입
+                test.at<uchar>(y, x) = 255;
+            }
+
+        }
+    }
+
+    // 최종 결과 업데이트
+    for (int y = 0; y < non_max_suppressed.rows; ++y) {
+        for (int x = 0; x < non_max_suppressed.cols; ++x) {
+            if (test.at<uchar>(y, x) != 255) { //주변에 강한에지가 없는경우 전부 0대입
+                test.at<uchar>(y, x) = 0;
+            }
+        }
+    }
+
+    return test;
+}
