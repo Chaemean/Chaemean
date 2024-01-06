@@ -1,0 +1,189 @@
+#include <opencv2\opencv.hpp>
+#include <random>
+#include<iostream>
+#include <cmath>
+
+using namespace cv;
+using namespace std;
+
+//에지 픽셀 라벨링
+std::vector<std::vector<int>> Edge_number(Mat edge, int edge_pixel)
+{
+	int number = 0;
+
+	int rows = edge.rows;
+	int cols = edge.cols;
+
+	std::vector<std::vector<int>> edge_number(edge_pixel, std::vector<int>(2));
+
+	for (int i = 0; i < edge.rows; i++) {
+		for (int j = 0; j < edge.cols; j++) {
+			if (edge.at<uchar>(i, j) > 0) {
+				edge_number[number][0] = i; //y위치
+				edge_number[number][1] = j; //x위치
+
+				number++;
+			}
+		}
+	}
+
+	return edge_number;
+}
+
+void Draw_Ransac(Mat img, int edge_pixel, std::vector<std::vector<int>> edge_number, Mat edge, int time, int threshold) 
+{             //인수: 에지픽셀 개수, 에지 넘버링 배열, 에지 이미지, 실행횟수, 임계값
+	double best_inclination=0 ;
+	double best_intercept=0;
+	int max_dot=0;
+	int last_x1; //수직선인경우 구분을 위한 변수
+	int last_x2;
+
+	int rows = img.rows;
+	int cols = img.cols;
+
+	for (int t = 0; t < time; t++) {
+		//랜덤한 두점 뽑기
+		std::random_device rd;  // 난수 생성을 위한 장치
+		std::mt19937 gen(rd()); // 난수 생성기 (Mersenne Twister 알고리즘 사용)
+
+		// 분포 설정 (0부터 edge_pixel - 1까지의 정수 중에서 랜덤 선택)
+		std::uniform_int_distribution<> distrib(0, edge_pixel - 1);
+
+		int number1 = distrib(gen); // 첫 번째 숫자 뽑기
+		int number2;
+
+		do {
+			number2 = distrib(gen); // 두 번째 숫자 뽑기
+		} while (number2 == number1); // 첫 번째 숫자와 다를 때까지 반복
+
+		int x1, x2;
+		int y1, y2;
+
+		x1 = edge_number[number1][1];
+		x2 = edge_number[number2][1];
+		y1 = edge_number[number1][0];
+		y2 = edge_number[number2][0];
+		
+		int dot = 0;
+
+		if (x1 == x2) { // 두 점이 수직선을 형성하는 경우
+			// 여기서는 기울기 대신 x 값을 사용하여 수직선을 그림
+			double inclination = 0; //기울기
+			double intercept = x1 - inclination * y1; // x 절편
+
+			for (int y = 0; y < edge.rows; y++) { //직선 그리기
+				int x = x1;
+
+				//직선 주변의 점 계산
+				for (int dy = -3; dy <= 3; dy++) {
+					for (int dx = -3; dx <= 3; dx++) {
+						int ny = y + dy;
+						int nx = x + dx;
+
+						if (ny >= 0 && ny < edge.rows && nx >= 0 && nx < edge.cols) { //배열 범위 밖 연산 방지
+							if (edge.at<uchar>(ny, nx) > 0)
+								dot++;
+						}
+					}
+				}
+			}
+
+			if (dot > threshold) {
+				if (dot > max_dot) {
+					best_inclination = inclination;
+					best_intercept = intercept;
+					last_x1 = x1;
+					last_x2 = x2;
+				}
+			}
+
+
+		}
+		else {
+			// 정상적으로 기울기를 계산할 수 있는 경우
+			double inclination = static_cast<double>(y2 - y1) / (x2 - x1);
+			double intercept = y1 - inclination * x1;
+
+			int dot = 0;
+
+			for (int x = 0; x < edge.cols; x++) { //직선 그리기
+				int y = int(inclination * x + intercept);
+
+				//직선 주변의 점 계산
+				for (int dy = -3; dy <= 3; dy++) {
+					for (int dx = -3; dx <= 3; dx++) {
+						int ny = y + dy;
+						int nx = x + dx;
+
+						if (ny >= 0 && ny < edge.rows && nx >= 0 && nx < edge.cols) { //배열 범위 밖 연산 방지
+							if (edge.at<uchar>(ny, nx) > 0)
+								dot++;
+						}
+					}
+				}
+			}
+
+			if (dot > threshold) {
+				if (dot > max_dot) {
+					best_inclination = inclination;
+					best_intercept = intercept;
+					last_x1 = x1;
+					last_x2 = x2;
+				}
+			}
+		}
+
+		
+		
+	}
+
+	if (last_x1 == last_x2) {
+		cv::line(img, Point(last_x1, 0), Point(last_x1, img.rows), Scalar(0, 0, 255), 2);
+
+		// 이미지 표시
+		imshow("Image with Line", img);
+		imwrite("Ransac_result.png", img);
+	}
+	else {
+		// 직선을 그릴 두 점 계산
+		cv::Point point1(0, static_cast<int>(best_intercept));
+		cv::Point point2(cols, static_cast<int>(best_inclination * rows + best_intercept));
+
+		// 이미지에 직선 그리기
+		cv::line(img, point1, point2, cv::Scalar(0, 0, 255), 2);
+
+		// 이미지 표시
+		imshow("Image with Line", img);
+		imwrite("Ransac_result2.png", img);
+	}
+}
+
+
+int main()
+{
+	Mat img = imread("RANSAC.png");
+
+	Mat canny_img;
+	Canny(img, canny_img, 30, 90, 3, 0);
+	imshow("canny", canny_img);
+
+	//에지인 픽셀 수 계산
+	int edge_pixel = 0;
+	for (int i = 0; i < canny_img.rows; i++) {
+		for (int j = 0; j < canny_img.cols; j++) {
+			if (canny_img.at<uchar>(i, j) > 0)
+				edge_pixel++;
+		}
+	}
+
+	std::vector<std::vector<int>> edge_number = Edge_number(canny_img, edge_pixel);
+
+	int time = 5000;
+	int threshold = 500; //dot이 중복되어 계산되기때문에 임계값 높게 잡음
+
+	Draw_Ransac(img, edge_pixel, edge_number, canny_img, time, threshold);
+
+	cv::waitKey(0);
+
+	return 0;
+}
