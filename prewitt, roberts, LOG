@@ -1,0 +1,182 @@
+#include <opencv2\opencv.hpp>
+
+using namespace cv;
+
+// 절댓값 반환
+double Absol(double x)
+{
+	if (x >= 0)
+		return x;
+	else
+		return -x;
+}
+
+//칼라->명암영상 함수 (이미지)
+Mat Gray(Mat img)
+{
+	int w = img.cols;
+	int h = img.rows;
+
+	Mat sub(h, w, CV_8UC1);
+
+	//명암영상 변환공식을 사용하여 그레이로 변환, +0.5는 반올림을 위해 해줌
+	for (int i = 0; i < h; i++) {
+		for (int j = 0; j < w; j++) {
+			Vec3b pixel = img.at<Vec3b>(i, j);
+			sub.at<uchar>(i, j) = (int)(0.114 * pixel[0] + 0.587 * pixel[1] + 0.299 * pixel[2] + 0.5);
+		}
+	}
+
+	return sub;
+}
+
+//명암영상 가우시안 커널 구하기
+Mat GaussianFilter(Mat img, int x) //이미지, 필터의 크기
+{
+	double sigma = (double)x / 6;
+	double pi = 3.141592;
+	double e = 2.718;
+	double p = 1 / (sigma * sigma * 2 * pi);
+
+	Mat gaussian_filter(x, x, CV_64F);//소숫점을 저장하기 위해 데이터형을 CV_64F로 해준다
+
+	for (int i = 0; i < x; i++)
+	{
+		for (int j = 0; j < x; j++) {
+			double power = (double)((i - x / 2) * (i - x / 2) + (j - x / 2) * (j - x / 2)) / (2 * sigma * sigma); //e의 지수 계산
+			gaussian_filter.at<double>(i, j) = p * pow(e, -power);  //필터 값 넣어줌
+		}
+	}
+
+	return gaussian_filter;
+}
+
+//컨볼루션 해주는 함수 (이미지, 커널)
+Mat Convolution(Mat img, Mat kernel) {
+	int kernelRows = kernel.rows;
+	int kernelCols = kernel.cols;
+
+	int imageRows = img.rows;
+	int imageCols = img.cols;
+
+	int paddingX = kernelCols / 2; // 가장자리 적용 안되는 부분 계산
+	int paddingY = kernelRows / 2;
+
+	//가장자리를 적용하기위해 가장자리를 0으로 채우는 0덧대기를 해준다
+	Mat sub = Mat::zeros(imageRows + 2 * paddingY, imageCols + 2 * paddingX, CV_8UC1); //0으로 초기화
+	Mat convol_img(imageRows, imageCols, CV_8UC1); //반환할 이미지
+
+	for (int i = paddingY; i < imageRows + paddingY; i++) { //sub에 원래 이미지 화솟값 채워줌, 가장자리 부분에 채우지 않도록 주의
+		for (int j = paddingX; j < imageCols + paddingX; j++) {
+			sub.at<uchar>(i, j) = img.at<uchar>(i - paddingY, j - paddingX);
+		}
+	}
+
+	// 가장자리(필터 적용이 안되는 부분)를 제외한 부분 컨볼루션
+	for (int i = paddingY; i < imageRows + paddingY; i++) {
+		for (int j = paddingX; j < imageCols + paddingX; j++) {
+			double sum = 0.0; // 중심화소 값 = sum
+
+			// 커널과 픽셀값 연산해서 중심화소 값 계산
+			for (int ky = 0; ky < kernelRows; ky++) {
+				for (int kx = 0; kx < kernelCols; kx++) {
+					double pixelValue = (double)sub.at<uchar>(i + ky - paddingY, j + kx - paddingX); //확장된 sub를 이용하여 중심화소를 기준으로 주변 값을 읽어온다.
+					double kernelValue = kernel.at<double>(ky, kx); // 커널 값을 읽어온다
+					sum += pixelValue * kernelValue; // 주변화소값과 커널값을 곱한 값을 모두 더해준다.
+				}
+			}
+
+			convol_img.at<uchar>(i - paddingY, j - paddingX) = saturate_cast<uchar>(Absol(sum)); // 반환할 이미지에 계산된 값을 넣어준다
+		}
+	}
+
+	return convol_img;
+}
+
+//라플라시안 해주는 함수 (이미지, 커널)
+Mat Laplacian(Mat img) {
+
+	Mat lap= (Mat_<double>(3, 3) << 1, 1, 1, 1, -8, 1, 1, 1, 1);
+
+	int kernelRows = lap.rows;
+	int kernelCols = lap.cols;
+
+	int imageRows = img.rows;
+	int imageCols = img.cols;
+
+	int paddingX = kernelCols / 2; // 가장자리 적용 안되는 부분 계산
+	int paddingY = kernelRows / 2;
+
+	//가장자리를 적용하기위해 가장자리를 0으로 채우는 0덧대기를 해준다
+	Mat sub = Mat::zeros(imageRows + 2 * paddingY, imageCols + 2 * paddingX, CV_8UC1); //0으로 초기화
+	Mat convol_img(imageRows, imageCols, CV_8UC1); //반환할 이미지
+
+	for (int i = paddingY; i < imageRows + paddingY; i++) { //sub에 원래 이미지 화솟값 채워줌, 가장자리 부분에 채우지 않도록 주의
+		for (int j = paddingX; j < imageCols + paddingX; j++) {
+			sub.at<uchar>(i, j) = img.at<uchar>(i - paddingY, j - paddingX);
+		}
+	}
+
+	// 가장자리(필터 적용이 안되는 부분)를 제외한 부분 컨볼루션
+	for (int i = paddingY; i < imageRows + paddingY; i++) {
+		for (int j = paddingX; j < imageCols + paddingX; j++) {
+			double sum = 0.0; // 중심화소 값 = sum
+
+			// 커널과 픽셀값 연산해서 중심화소 값 계산
+			for (int ky = 0; ky < kernelRows; ky++) {
+				for (int kx = 0; kx < kernelCols; kx++) {
+					double pixelValue = (double)sub.at<uchar>(i + ky - paddingY, j + kx - paddingX); //확장된 sub를 이용하여 중심화소를 기준으로 주변 값을 읽어온다.
+					double kernelValue = lap.at<double>(ky, kx); // 커널 값을 읽어온다
+					sum += pixelValue * kernelValue; // 주변화소값과 커널값을 곱한 값을 모두 더해준다.
+				}
+			}
+
+			if (sum < 0) { sum = 0; }
+			else if (sum > 255) { sum = 255; }
+
+			convol_img.at<uchar>(i - paddingY, j - paddingX) = sum; // 반환할 이미지에 계산된 값을 넣어준다
+		}
+	}
+
+	return convol_img;
+}
+
+int main()
+{
+	Mat img = imread("lena.jpg");
+	Mat gray_img = Gray(img);
+
+	// prewitt
+	Mat prewitt_x = (Mat_<double>(3, 3) << -1, 0, 1, -1, 0, 1, -1, 0, 1);
+	Mat prewitt_y = (Mat_<double>(3, 3) << -1, -1, -1, 0, 0, 0, 1, 1, 1);
+
+	Mat prewitt_imgx = Convolution(gray_img, prewitt_x);
+	Mat prewitt_imgy = Convolution(gray_img, prewitt_y);
+
+	//imshow("prewitt_x", prewitt_imgx);
+	//imshow("prewitt_y", prewitt_imgy);
+
+
+	// Roberts
+	Mat Roberts_x = (Mat_<double>(3, 3) << -1, 0, 0, 0, 1, 0, 0, 0, 0);
+	Mat Roberts_y = (Mat_<double>(3, 3) << 0, 0, -1, 0, 1, 0, 0, 0, 0);
+
+	Mat Roberts_imgx = Convolution(gray_img, Roberts_x);
+	Mat Roberts_imgy = Convolution(gray_img, Roberts_y);
+
+	//imshow("Roberts_x", Roberts_imgx);
+	//imshow("Roberts_y", Roberts_imgy);
+
+
+	// LoG
+	Mat gaussian_filter3 = GaussianFilter(gray_img, 5);
+	Mat gaussian_blur = Convolution(gray_img, gaussian_filter3);
+
+	Mat LoG_img = Laplacian(gaussian_blur);
+
+	imshow("LoG", LoG_img);
+
+	waitKey(0);
+
+	return 0;
+}
