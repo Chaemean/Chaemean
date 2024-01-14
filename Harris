@@ -1,0 +1,266 @@
+#include <iostream>
+#include <opencv2\opencv.hpp>
+#include <iomanip>
+
+using namespace cv;
+using namespace std;
+
+Mat Convolution(Mat img, Mat kernel) {
+    Mat return_img = Mat::zeros(img.size(), CV_32F);
+    int kRowsHalf = kernel.rows / 2;
+    int kColsHalf = kernel.cols / 2;
+
+    Mat img_float;
+    img.convertTo(img_float, CV_32F);
+
+    for (int y = kRowsHalf; y < img.rows - kRowsHalf; y++) {
+        for (int x = kColsHalf; x < img.cols - kColsHalf; x++) {
+            float sum = 0.0;
+            for (int dy = -kRowsHalf; dy <= kRowsHalf; dy++) {
+                for (int dx = -kColsHalf; dx <= kColsHalf; dx++) {
+                    sum += img_float.at<float>(y + dy, x + dx) * kernel.at<float>(dy + kRowsHalf, dx + kColsHalf);
+                }
+            }
+            return_img.at<float>(y, x) = sum;
+        }
+    }
+    return return_img;
+}
+
+Mat GaussianFilter(int ksize, float sigma) {
+    CV_Assert(ksize % 2 == 1); // 커널 크기는 홀수여야 합니다.
+    cv::Mat kernel = cv::Mat(ksize, 1, CV_32F);
+    float sum = 0.0;
+    int k = ksize / 2;
+
+    for (int i = -k; i <= k; i++) {
+        float value = exp(-(i * i) / (2 * sigma * sigma)) / (sqrt(2 * CV_PI) * sigma);
+        kernel.at<float>(i + k, 0) = value;
+        sum += value;
+    }
+
+    // 커널을 정규화합니다.
+    for (int i = 0; i < ksize; i++) {
+        kernel.at<float>(i, 0) /= sum;
+    }
+
+    return kernel;
+}
+
+Mat Outer(Mat a, Mat b)
+{
+    int y = a.rows;
+    int x = b.cols;
+
+    Mat result = Mat::zeros(y, x, CV_32F);
+
+    for (int i = 0; i < y;i++) {
+        for (int j = 0;j < x;j++) {
+            result.at<float>(i, j) = a.at<float>(i, 0) * b.at<float>(0, j);
+        }
+    }
+
+    return result;
+}
+
+Mat Transpose(Mat img)
+{
+    int y = img.rows;
+    int x = img.cols;
+    Mat return_img = Mat::zeros(x, y, CV_32F);
+
+    for (int i = 0; i < y; i++) {
+        for (int j = 0; j < x; j++) {
+            return_img.at<float>(j, i) = img.at<float>(i, j);
+        }
+    }
+
+    return return_img;
+}
+
+Mat Multi_Mat(Mat a, Mat b)
+{
+    Mat return_img(a.size(), CV_32F);
+
+    if (a.size() == b.size()) {
+        for (int i = 0; i < a.rows;i++) {
+            for (int j = 0; j < a.cols; j++) {
+                return_img.at<float>(i, j) = a.at<float>(i, j) * b.at<float>(i, j);
+            }
+        }
+    }
+
+    return return_img;
+}
+
+Mat Sub_Mat(Mat a, Mat b)
+{
+    Mat return_img(a.size(), CV_32F);
+
+    if (a.size() == b.size()) {
+        for (int i = 0; i < a.rows;i++) {
+            for (int j = 0; j < a.cols; j++) {
+                return_img.at<float>(i, j) = a.at<float>(i, j) - b.at<float>(i, j);
+            }
+        }
+    }
+
+    return return_img;
+}
+
+Mat Add_Mat(Mat a, Mat b)
+{
+    Mat return_img(a.size(), CV_32F);
+
+    if (a.size() == b.size()) {
+        for (int i = 0; i < a.rows;i++) {
+            for (int j = 0; j < a.cols; j++) {
+                return_img.at<float>(i, j) = a.at<float>(i, j) + b.at<float>(i, j);
+            }
+        }
+    }
+
+    return return_img;
+}
+
+void PrintMat(const Mat& mat) {
+    cout << fixed << setprecision(2); // 소수점 둘째 자리까지 고정하여 출력
+    for (int i = 0; i < mat.rows; ++i) {
+        for (int j = 0; j < mat.cols; ++j) {
+            cout << mat.at<float>(i, j) << " "; // float 타입을 가정
+        }
+        cout << endl;
+    }
+    cout << endl;
+}
+
+Mat NMS(Mat C, Mat img)
+{
+    Mat nms = img.clone(); //비최대 억제 결과를 저장할 배열 생성
+
+    for (int i = 0; i < C.rows; i++) {
+        for (int j = 0; j < C.cols; j++) {
+            int sum = 0;
+
+            for (int dy = -1; dy <= 1; dy++) { //중심이 여러개 검출되는것을 방지하기 위해 비교하는 주변 범위를 키워준다.
+                for (int dx = -1; dx <= 1; dx++) {
+                    int ny = i + dy;
+                    int nx = j + dx;
+                    if (ny >= 0 && ny < C.rows && nx >= 0 && nx < C.cols) { //배열 범위 밖 연산 방지
+                        if (C.at<float>(i, j) < C.at<float>(ny, nx))
+                            sum += 1;
+                    }
+                }
+            }
+
+            if (sum == 0) {
+                if (nms.at<float>(i, j) > 0) {
+                    nms.at<float>(i, j) = 255;
+                }
+            }
+
+            else
+                nms.at<float>(i, j) = 0;
+        }
+    }
+    return nms;
+}
+
+/**/
+//배열
+int main() {
+    Mat img = (Mat_<float>(10, 10) <<
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 1, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 1, 1, 0, 0, 0, 0, 0,
+        0, 0, 0, 1, 1, 1, 0, 0, 0, 0,
+        0, 0, 0, 1, 1, 1, 1, 0, 0, 0,
+        0, 0, 0, 1, 1, 1, 1, 1, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+
+
+    Mat ux = (Mat_<float>(1, 3) << -1, 0, 1);
+    Mat uy = (Mat_<float>(3, 1) << -1, 0, 1);
+    Mat k = GaussianFilter(3, 1);
+    Mat g = Outer(k, Transpose(k));
+
+    Mat dy = Convolution(img, uy);
+    Mat dx = Convolution(img, ux);
+    Mat dyy = Multi_Mat(dy, dy);
+    Mat dxx = Multi_Mat(dx, dx);
+    Mat dyx = Multi_Mat(dy, dx);
+    Mat gdyy = Convolution(dyy, g);
+    Mat gdxx = Convolution(dxx, g);
+    Mat gdyx = Convolution(dyx, g);
+    Mat C = Sub_Mat((Sub_Mat(Multi_Mat(gdyy, gdxx), Multi_Mat(gdyx, gdyx))), 0.04 * Multi_Mat(Add_Mat(gdyy, gdxx), Add_Mat(gdyy, gdxx)));
+    Mat result = NMS(C, img);
+
+    cout << dy << endl;
+    cout << endl;
+    cout << dx << endl;
+    cout << endl;
+    cout << dyy << endl;
+    cout << endl;
+    cout << dxx << endl;
+    cout << endl;
+    cout << dyx << endl;
+    cout << endl;
+    PrintMat(gdyy);
+    PrintMat(gdxx);
+    PrintMat(gdyx);
+    PrintMat(C);
+    PrintMat(result);
+
+    imshow("result", result);
+
+    waitKey(0);
+    return 0;
+}
+
+/*
+//사각형 사진
+int main() {
+    Mat img = imread("sagak.png", IMREAD_GRAYSCALE);
+    img.convertTo(img, CV_32F);
+
+
+    Mat ux = (Mat_<float>(1, 3) << -1, 0, 1);
+    Mat uy = (Mat_<float>(3, 1) << -1, 0, 1);
+    Mat k = GaussianFilter(3, 1);
+    Mat g = Outer(k, Transpose(k));
+
+    Mat dy = Convolution(img, uy);
+    Mat dx = Convolution(img, ux);
+    Mat dyy = Multi_Mat(dy, dy);
+    Mat dxx = Multi_Mat(dx, dx);
+    Mat dyx = Multi_Mat(dy, dx);
+    Mat gdyy = Convolution(dyy, g);
+    Mat gdxx = Convolution(dxx, g);
+    Mat gdyx = Convolution(dyx, g);
+    Mat C = Sub_Mat((Sub_Mat(Multi_Mat(gdyy, gdxx), Multi_Mat(gdyx, gdyx))), 0.04 * Multi_Mat(Add_Mat(gdyy, gdxx), Add_Mat(gdyy, gdxx)));
+    Mat result = NMS(C, img);
+
+    cout << dy << endl;
+    cout << endl;
+    cout << dx << endl;
+    cout << endl;
+    cout << dyy << endl;
+    cout << endl;
+    cout << dxx << endl;
+    cout << endl;
+    cout << dyx << endl;
+    cout << endl;
+    PrintMat(gdyy);
+    PrintMat(gdxx);
+    PrintMat(gdyx);
+    PrintMat(C);
+    PrintMat(result);
+
+    imshow("result", result);
+
+    waitKey(0);
+    return 0;
+} */
