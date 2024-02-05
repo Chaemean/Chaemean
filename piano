@@ -1,0 +1,145 @@
+from PyQt5.QtWidgets import *
+import sys
+import winsound  #삑 소리내는데 사용
+
+class BeepSound(QMainWindow):
+    def __init__(self) :
+        super().__init__()
+        self.setWindowTitle('피아노') 		# 윈도우 이름과 위치 지정
+        self.setGeometry(500,500,600,300)
+
+        do=QPushButton('도',self)	# 버튼 생성
+        re=QPushButton('레',self)	
+        mi=QPushButton('미',self)	
+        fa=QPushButton('파',self)	
+        sol=QPushButton('솔',self)	
+        la=QPushButton('라',self)	
+        si=QPushButton('시',self)	
+        high_do=QPushButton('도',self)	
+        airplane=QPushButton('비행기',self)
+        bell=QPushButton('학교종',self)
+        quitButton=QPushButton('나가기',self)
+        self.label=QLabel('환영합니다!',self)
+        
+        do.setGeometry(10,10,30,100)	# 버튼 위치와 크기 지정
+        re.setGeometry(40,10,30,100)
+        mi.setGeometry(70,10,30,100)
+        fa.setGeometry(100,10,30,100)
+        sol.setGeometry(130,10,30,100)
+        la.setGeometry(160,10,30,100)
+        si.setGeometry(190,10,30,100)
+        high_do.setGeometry(220,10,30,100)
+        airplane.setGeometry(260,10,100,30)
+        bell.setGeometry(260,40,100,30)
+        
+        quitButton.setGeometry(400,40,100,30)
+        self.label.setGeometry(10,200,500,70)
+        
+        do.clicked.connect(self.doBeepFunction) # 콜백 함수 지정 
+        re.clicked.connect(self.reBeepFunction)
+        mi.clicked.connect(self.miBeepFunction)
+        fa.clicked.connect(self.faBeepFunction)
+        sol.clicked.connect(self.solBeepFunction)
+        la.clicked.connect(self.laBeepFunction)
+        si.clicked.connect(self.siBeepFunction)
+        high_do.clicked.connect(self.high_doBeepFunction)
+        airplane.clicked.connect(self.airplaneBeepFunction)
+        bell.clicked.connect(self.bellBeepFunction)
+        quitButton.clicked.connect(self.quitFunction)
+       
+    def doBeepFunction(self):
+        self.label.setText('도')   
+        winsound.Beep(262,700)
+        
+    def reBeepFunction(self):
+        self.label.setText('레')   
+        winsound.Beep(294,700)
+        
+    def miBeepFunction(self):
+        self.label.setText('미')   
+        winsound.Beep(330,700)
+        
+    def faBeepFunction(self):
+        self.label.setText('파')   
+        winsound.Beep(349,700)
+            
+    def solBeepFunction(self):
+        self.label.setText('솔')   
+        winsound.Beep(392,700)
+        
+    def laBeepFunction(self):
+        self.label.setText('라')   
+        winsound.Beep(440,700)
+        
+    def siBeepFunction(self):
+        self.label.setText('시')   
+        winsound.Beep(494,700)
+    
+    def high_doBeepFunction(self):
+        self.label.setText('도')   
+        winsound.Beep(523,700)
+        
+    def airplaneBeepFunction(self):
+        self.label.setText('떳다떳다 비행기를 연주합니다.')   
+        winsound.Beep(330,1000)
+        winsound.Beep(294,700)
+        winsound.Beep(262,700)
+        winsound.Beep(294,700)
+        winsound.Beep(330,700)
+        winsound.Beep(330,700)
+        winsound.Beep(330,700)
+        winsound.Beep(294,700)
+        winsound.Beep(294,700)
+        winsound.Beep(294,700)
+        winsound.Beep(330,700)
+        winsound.Beep(330,700)
+        winsound.Beep(330,700)
+        winsound.Beep(330,1000)
+        winsound.Beep(294,700)
+        winsound.Beep(262,700)
+        winsound.Beep(294,700)
+        winsound.Beep(330,700)
+        winsound.Beep(330,700)
+        winsound.Beep(330,700)
+        winsound.Beep(294,700)
+        winsound.Beep(294,700)
+        winsound.Beep(330,700)
+        winsound.Beep(294,700)
+        winsound.Beep(262,700)
+        
+        
+    def bellBeepFunction(self):
+        self.label.setText('학교종을 연주합니다.')   
+        winsound.Beep(392,700)
+        winsound.Beep(392,700)
+        winsound.Beep(440,700)
+        winsound.Beep(440,700)
+        winsound.Beep(392,700)
+        winsound.Beep(392,700)
+        winsound.Beep(330,1000)
+        winsound.Beep(392,700)
+        winsound.Beep(392,700)
+        winsound.Beep(330,700)
+        winsound.Beep(330,700)
+        winsound.Beep(294,1200)
+        winsound.Beep(392,700)
+        winsound.Beep(392,700)
+        winsound.Beep(440,700)
+        winsound.Beep(440,700)
+        winsound.Beep(392,700)
+        winsound.Beep(392,700)
+        winsound.Beep(330,1000)
+        winsound.Beep(392,700)
+        winsound.Beep(330,700)
+        winsound.Beep(294,700)
+        winsound.Beep(330,700)
+        winsound.Beep(262,1400)
+        
+                
+    def quitFunction(self):
+        self.close()
+                
+app=QApplication(sys.argv) 
+win=BeepSound() 
+win.show()
+app.exec_()
