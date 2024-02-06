@@ -2,7 +2,6 @@ import cv2 as cv
 import numpy as np
 from PyQt5.QtWidgets import *
 import sys
-import winsound
        
 class Video_capture(QMainWindow):
     def __init__(self) :
@@ -30,14 +29,15 @@ class Video_capture(QMainWindow):
         recognitionButton.clicked.connect(self.recognitionFunction)        
         quitButton.clicked.connect(self.quitFunction)
 
-        
+    
+    #물체 이미지 읽어온 후 ObjectImg에 저장
     def ObjectFunction(self):
         self.label.clear()
         self.label.setText('물체를 등록합니다.')
-        
         self.ObjectImg=cv.imread('object3.jpg')
         cv.imshow('object3.jpg',self.ObjectImg)
-        
+     
+    #카메라와 연결후 영상 읽어옴
     def videoFunction(self):
         self.cap=cv.VideoCapture(0,cv.CAP_DSHOW)	# 카메라와 연결 시도
         if not self.cap.isOpened(): self.close()      
@@ -47,33 +47,38 @@ class Video_capture(QMainWindow):
             cv.imshow('video display',self.frame)
             cv.waitKey(1)
         
+    #프레임 캡쳐
     def captureFunction(self):
         self.capturedFrame=self.frame
         cv.imshow('Captured Frame',self.capturedFrame) 
-        self.captureImg=self.capturedFrame
+        self.captureImg=self.capturedFrame  #캡쳐한 프레임 captureImg에 저장
         
         if self.ObjectImg is None: 
             self.label.setText('먼저 물체를 등록하세요.')
         else:
             self.captureImg=self.capturedFrame 
             if self.captureImg is None: sys.exit('파일을 찾을 수 없습니다.')  
-        
+    
+    #물체와 프레임 매칭
     def recognitionFunction(self):
         if self.captureImg is None: 
             self.label.setText('먼저 프레임 영상을 입력하세요.')
         else:
             sift=cv.SIFT_create()
         
-            gray=cv.cvtColor(self.ObjectImg,cv.COLOR_BGR2GRAY)
-            object_kp,object_des=sift.detectAndCompute(gray,None)
+            gray=cv.cvtColor(self.ObjectImg,cv.COLOR_BGR2GRAY) # 명암으로 변환
+            object_kp,object_des=sift.detectAndCompute(gray,None) # 키포인트와 기술자 추출
 
             grayImg=cv.cvtColor(self.captureImg,cv.COLOR_BGR2GRAY) # 명암으로 변환
             capture_kp,capture_des=sift.detectAndCompute(grayImg,None) # 키포인트와 기술자 추출
             
-                
+            #flann 라이브러리 사용 객체 생성
             matcher=cv.DescriptorMatcher_create(cv.DescriptorMatcher_FLANNBASED)
             
+            #matcher객체의 knnMatch함수를 호출해 매칭, des1과des2를 매칭하고 최근접 2개 찾음
             knn_match=matcher.knnMatch(object_des,capture_des,2)
+            
+            #최근접 이웃 거리 비율 사용
             T=0.7
             good_match=[]
             for nearest1,nearest2 in knn_match:
@@ -81,28 +86,27 @@ class Video_capture(QMainWindow):
                     good_match.append(nearest1)       
             
             if len(good_match)<4:	# 물체의 매칭 쌍 4개 미만이면 실패
-                self.label.setText('표지판이 없습니다.')  
+                self.label.setText('물체가 없습니다.')  
             else:			# 성공(호모그래피 찾아 영상에 표시)
             
                 points1=np.float32([object_kp[gm.queryIdx].pt for gm in good_match])  #첫번째 영상에서 추출한 특징점들의 좌표
                 points2=np.float32([capture_kp[gm.trainIdx].pt for gm in good_match])  #두번째 영상에서 추출한 특징점들의 좌표
 
-                H,_=cv.findHomography(points1,points2,cv.RANSAC)
+                H,_=cv.findHomography(points1,points2,cv.RANSAC)  #호모그래피 추정, 란삭 이용
                 
                 h1,w1=gray.shape[0],gray.shape[1] 		# 첫 번째 영상의 크기
                 h2,w2=grayImg.shape[0],grayImg.shape[1] 		# 두 번째 영상의 크기
                 
-                box1=np.float32([[0,0],[0,h1-1],[w1-1,h1-1],[w1-1,0]]).reshape(4,1,2)
-                box2=cv.perspectiveTransform(box1,H)
+                box1=np.float32([[0,0],[0,h1-1],[w1-1,h1-1],[w1-1,0]]).reshape(4,1,2)  #첫번째 영상의 네 모서리의 좌표 저장
+                box2=cv.perspectiveTransform(box1,H)                   #호모그래피 행렬을 이용해 투영한 결과를 저장
                 
                 self.captureImg=cv.polylines(self.captureImg,[np.int32(box2)],True,(0,255,0),4)
                 
-                img_match=np.empty((max(h1,h2),w1+w2,3),dtype=np.uint8)
+                img_match=np.empty((max(h1,h2),w1+w2,3),dtype=np.uint8)   #영상 나란히 배치
                 cv.drawMatches(self.ObjectImg,object_kp,self.captureImg,capture_kp,good_match,img_match,flags=cv.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
                 cv.imshow('Matches and Homography',img_match)
                 
                 self.label.setText(' 물체가 있습니다.')                 
-                winsound.Beep(400,500)  
                 
     def quitFunction(self):
         self.cap.release()				# 카메라와 연결을 끊음
