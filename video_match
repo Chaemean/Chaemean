@@ -84,15 +84,9 @@ class Video_capture(QMainWindow):
                 self.label.setText('표지판이 없습니다.')  
             else:			# 성공(호모그래피 찾아 영상에 표시)
             
-                print(len(capture_kp), len(good_match))
-                print(max(gm.trainIdx for gm in good_match))
-            
                 points1=np.float32([object_kp[gm.queryIdx].pt for gm in good_match])  #첫번째 영상에서 추출한 특징점들의 좌표
                 points2=np.float32([capture_kp[gm.trainIdx].pt for gm in good_match])  #두번째 영상에서 추출한 특징점들의 좌표
-                
-                print(len(capture_kp), len(good_match))
-                print(max(gm.trainIdx for gm in good_match))
-                
+
                 H,_=cv.findHomography(points1,points2,cv.RANSAC)
                 
                 h1,w1=gray.shape[0],gray.shape[1] 		# 첫 번째 영상의 크기
